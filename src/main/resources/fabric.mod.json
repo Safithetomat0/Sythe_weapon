@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "sythe_weapon",
+  "version": "${version}",
+  "name": "Sythe_weapon",
+  "description": "",
+  "authors": [
+    "Safithetomat0"
+  ],
+  "contact": {
+    "website": "https://github.com/Safi",
+    "repo": "https://github.com/Safi/Sythe_weapon"
+  },
+  "license": "All-Rights-Reserved",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "org.safi.weapons.scythe_weapon.client.Sythe_weaponClient"
+    ],
+    "main": [
+      "org.safi.weapons.scythe_weapon.WeaponsMod"
+    ]
+  },
+  "mixins": [
+    "sythe_weapon.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
