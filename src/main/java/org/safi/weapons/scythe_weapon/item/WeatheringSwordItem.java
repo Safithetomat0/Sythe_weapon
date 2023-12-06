@@ -10,12 +10,14 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.SwordItem;
 import net.minecraft.item.ToolMaterial;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.TypedActionResult;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.random.Random;
 import net.minecraft.world.World;
 import org.safi.weapons.scythe_weapon.WeaponsMod;
 
@@ -28,7 +30,6 @@ public class WeatheringSwordItem extends SwordItem {
     public WeatheringSwordItem(ToolMaterial material, int attackDamage, float attackSpeed) {
         super(material, attackDamage, attackSpeed, new Item.Settings());
     }
-
     @Override
     public ActionResult useOnEntity(ItemStack stack, PlayerEntity user, LivingEntity entity, Hand hand) {
 
@@ -59,10 +60,12 @@ public class WeatheringSwordItem extends SwordItem {
                     Vec3d acceleration = new Vec3d(user.getX() - entity.getX(), user.getY() - entity.getY(), user.getZ() - entity.getZ());
 
                     // Modify this as needed based on your desired acceleration
-                    double speed = 0.1; // Set speed to half the distance
+                    double speed = 0.3; // Set speed to half the distance
                     entity.setVelocity(acceleration.multiply(speed));
 
-                    // Do something else if needed
+
+                    spawnRedstoneParticles(world, user, entity, 20);
+
                 }
             }
         }
@@ -84,4 +87,23 @@ public class WeatheringSwordItem extends SwordItem {
     public boolean isDamageable() {
         return false;
     }
+    private static void spawnRedstoneParticles(World world, Entity startEntity, Entity endEntity, int particleCount) {
+        Random rand = world.random;
+        for (int i = 0; i < particleCount; i++) {
+            double offsetX = rand.nextDouble() * 0.2 - 0.1;
+            double offsetY = rand.nextDouble() * 0.2 - 0.1;
+            double offsetZ = rand.nextDouble() * 0.2 - 0.1;
+
+            double startX = startEntity.getX() + offsetX;
+            double startY = startEntity.getY() + startEntity.getHeight() / 2.0 + offsetY;
+            double startZ = startEntity.getZ() + offsetZ;
+
+            double endX = endEntity.getX() + offsetX;
+            double endY = endEntity.getY() + endEntity.getHeight() / 2.0 + offsetY;
+            double endZ = endEntity.getZ() + offsetZ;
+
+            world.addParticle(ParticleTypes.DRAGON_BREATH, startX, startY, startZ, endX - startX, endY - startY, endZ - startZ);
+        }
+    }
+
 }
