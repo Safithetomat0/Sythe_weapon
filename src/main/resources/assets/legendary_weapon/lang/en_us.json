@@ -1,3 +1,4 @@
 {
-  "item.legendary_weapon.weathering_sword": "Scythe"
+  "item.legendary_weapon.scythe": "Scythe",
+  "effect.legendary_weapon.weathering": "Soul Attached"
 }

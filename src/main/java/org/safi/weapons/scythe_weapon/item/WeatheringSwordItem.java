@@ -44,7 +44,7 @@ public class WeatheringSwordItem extends SwordItem {
     public TypedActionResult<ItemStack> use(World world, PlayerEntity user, Hand hand) {
         System.out.println("Starting use method...");
 
-        List<Entity> entities = world.getEntitiesByClass(Entity.class, user.getBoundingBox().expand(100.0, 100.0, 100.0), entity -> entity instanceof LivingEntity);
+        List<Entity> entities = world.getEntitiesByClass(Entity.class, user.getBoundingBox().expand(1000.0, 100.0, 1000.0), entity -> entity instanceof LivingEntity);
         System.out.println("Found " + entities.size() + " entities within the range.");
 
         for (Entity entity : entities) {
@@ -55,25 +55,34 @@ public class WeatheringSwordItem extends SwordItem {
                 if (livingEntity.hasStatusEffect(WeaponsMod.WEATHERING_EFFECT)) {
                     System.out.println("Adjusting acceleration for entity: " + entity);
 
-                    double distance = user.distanceTo(entity);
                     // Adjust the acceleration of the entity towards the user
                     Vec3d acceleration = new Vec3d(user.getX() - entity.getX(), user.getY() - entity.getY(), user.getZ() - entity.getZ());
 
                     // Modify this as needed based on your desired acceleration
-                    double speed = 0.3; // Set speed to half the distance
-                    entity.setVelocity(acceleration.multiply(speed));
-
+                    double speed = -0.25; // Set speed to half the distance
+                    user.setVelocity(acceleration.multiply(speed));
 
                     spawnRedstoneParticles(world, user, entity, 20);
 
+                    return TypedActionResult.success(user.getStackInHand(hand));
                 }
             }
         }
 
+        // Remove entities without the 'weathering effect' from the original list
+        entities.removeIf(entity -> !(entity instanceof LivingEntity) || !((LivingEntity) entity).hasStatusEffect(WeaponsMod.WEATHERING_EFFECT));
+
+        if (entities.isEmpty()) {
+            // No entity with the 'weathering effect' found
+            System.out.println("No entity with the 'weathering effect' found.");
+            return TypedActionResult.fail(user.getStackInHand(hand));
+        }
+
         System.out.println("Finished use method.");
 
-        return TypedActionResult.success(user.getStackInHand(hand));
+        return TypedActionResult.pass(user.getStackInHand(hand));
     }
+
     @Override
     public boolean postHit(ItemStack stack, LivingEntity target, LivingEntity attacker) {
         // Apply the weathering effect to the hit entity

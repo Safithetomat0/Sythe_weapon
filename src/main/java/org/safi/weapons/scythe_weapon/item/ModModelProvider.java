@@ -1,4 +1,4 @@
-package org.safi.weapons.scythe_weapon.mixin;
+package org.safi.weapons.scythe_weapon.item;
 
 import net.fabricmc.fabric.api.datagen.v1.FabricDataOutput;
 import net.fabricmc.fabric.api.datagen.v1.provider.FabricModelProvider;
@@ -19,6 +19,6 @@ public class ModModelProvider extends FabricModelProvider {
 
     @Override
     public void generateItemModels(ItemModelGenerator itemModelGenerator) {
-        itemModelGenerator.register(WeaponsMod.WEATHERING_SWORD, Models.HANDHELD);
+        itemModelGenerator.register(WeaponsMod.WEATHERING_SWORD, Models.GENERATED);
     }
 }

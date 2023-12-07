@@ -22,7 +22,7 @@
     ]
   },
   "mixins": [
-    "sythe_weapon.mixins.json"
+    "scythe_weapon.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${loader_version}",
