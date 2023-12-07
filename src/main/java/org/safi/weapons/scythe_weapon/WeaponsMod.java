@@ -17,8 +17,7 @@ public class WeaponsMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        Registry.register(Registries.STATUS_EFFECT, new Identifier(MOD_ID, "weathering"), WEATHERING_EFFECT);
+        Registry.register(Registries.STATUS_EFFECT, new Identifier(MOD_ID, "soul_attached"), WEATHERING_EFFECT);
         Registry.register(Registries.ITEM, new Identifier(MOD_ID, "scythe"), WEATHERING_SWORD);
-
     }
 }

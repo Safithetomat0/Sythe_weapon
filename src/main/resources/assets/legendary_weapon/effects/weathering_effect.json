@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "minecraft:status_effect": {
+    "description": {
+      "identifier": "legendary_weapon:weathering_effect",
+      "name": "Weathering Effect",
+      "description": "A custom weathering effect."
+    },
+    "icon": "item/legendary_weapon/weathering_effect_icon",
+    "is_visible": true,
+    "is_potion": false,
+    "liquid_color": "0xFF0000",
+    "permanence": true
+  }
+}
