@@ -2,7 +2,6 @@ package org.safi.weapons.scythe_weapon.item;
 
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
@@ -11,7 +10,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.SwordItem;
 import net.minecraft.item.ToolMaterial;
 import net.minecraft.particle.ParticleTypes;
-import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
@@ -24,8 +22,8 @@ import org.safi.weapons.scythe_weapon.WeaponsMod;
 import java.util.List;
 
 public class WeatheringSwordItem extends SwordItem {
-    private static final int MAX_CHARGES = 6;
-    private static final int CHARGE_COOLDOWN = 14*20; // 4 seconds converted to ticks
+    private static final int MAX_CHARGES = 3;
+    private static final int CHARGE_COOLDOWN = 20 * 67 *   14; // converted to seconds
     private int chargesRemaining = MAX_CHARGES;
     private int cooldownTimer = 0;
     public WeatheringSwordItem(ToolMaterial material, int attackDamage, float attackSpeed) {
@@ -38,15 +36,12 @@ public class WeatheringSwordItem extends SwordItem {
             if (chargesRemaining > 0) {
                 if (!entity.hasStatusEffect(WeaponsMod.WEATHERING_EFFECT)) {
                     // Perform the action for each charge
-                    performAction(user.getWorld(), user, stack);
+                    performAction(user.getWorld(), entity);
 
                     // Start cooldown timer
                     if (chargesRemaining == MAX_CHARGES) {
                         cooldownTimer = CHARGE_COOLDOWN;
                     }
-
-                    // Decrease charges
-                    chargesRemaining--;
 
                     entity.addStatusEffect(new StatusEffectInstance(WeaponsMod.WEATHERING_EFFECT, 1000, 1)); // Adjust duration as needed
                     return ActionResult.SUCCESS;
@@ -70,8 +65,7 @@ public class WeatheringSwordItem extends SwordItem {
             LivingEntity selectedEntity = null;
 
             for (Entity entity : entities) {
-                if (entity != user && entity instanceof LivingEntity) {
-                    LivingEntity livingEntity = (LivingEntity) entity;
+                if (entity != user && entity instanceof LivingEntity livingEntity) {
 
                     // Check if the LivingEntity has the specified status effect
                     if (livingEntity.hasStatusEffect(WeaponsMod.WEATHERING_EFFECT)) {
@@ -83,7 +77,7 @@ public class WeatheringSwordItem extends SwordItem {
 
             if (selectedEntity != null) {
                 System.out.println("Adjusting acceleration for entity: " + selectedEntity);
-
+                user.getItemCooldownManager().set(itemStack.getItem(),20);
                 // Adjust the acceleration of the entity towards the user
                 Vec3d acceleration = new Vec3d(user.getX() - selectedEntity.getX(), user.getY() - selectedEntity.getY(), user.getZ() - selectedEntity.getZ());
 
@@ -91,16 +85,16 @@ public class WeatheringSwordItem extends SwordItem {
                 double speed = -0.2; // Set speed to half the distance
                 user.setVelocity(acceleration.multiply(speed));
 
-                spawnRedstoneParticles(world, user, selectedEntity, 20);
+                spawnRedstoneParticles(world, user, selectedEntity, 100);
 
                 // Perform the action for each charge
-                performAction(world, user, user.getStackInHand(hand));
+                performAction(world, selectedEntity);
 
                 // Start cooldown timer
                 if (chargesRemaining == MAX_CHARGES) {
                     cooldownTimer = CHARGE_COOLDOWN;
                 }
-                user.getItemCooldownManager().set(itemStack.getItem(), 10);
+
 
                 // Decrease charges
                 chargesRemaining--;
@@ -146,9 +140,9 @@ public class WeatheringSwordItem extends SwordItem {
             world.addParticle(ParticleTypes.DRAGON_BREATH, startX, startY, startZ, endX - startX, endY - startY, endZ - startZ);
         }
     }
-    private void performAction(World world, PlayerEntity user, ItemStack itemStack) {
-        int numParticles = 10; // Number of particles in the circle
-        double radius = 1.0; // Radius of the circular motion
+    private void performAction(World world, LivingEntity entityusedon) {
+        int numParticles = 30; // Number of particles in the circle
+        double radius = 1.5; // Radius of the circular motion
 
         for (int i = 0; i < numParticles; i++) {
             double angle = (2.0 * Math.PI * i) / numParticles; // Angle for each particle
@@ -157,17 +151,16 @@ public class WeatheringSwordItem extends SwordItem {
             double offsetZ = radius * Math.sin(angle); // Z offset based on angle
 
             // Add particle at the calculated position
-            world.addParticle(ParticleTypes.DRAGON_BREATH, user.getX() + offsetX, user.getY() + offsetY, user.getZ() + offsetZ, 0, 0, 0);
+            world.addParticle(ParticleTypes.DRAGON_BREATH, entityusedon.getX() + offsetX, entityusedon.getY() + offsetY, entityusedon.getZ() + offsetZ, 0, 0.2, 0);
         }
     }
     @Override
     public void inventoryTick(ItemStack stack, World world, Entity entity, int slot, boolean selected) {
         super.inventoryTick(stack, world, entity, slot, selected);
 
-        if (entity instanceof PlayerEntity) {
-            PlayerEntity player = (PlayerEntity) entity;
+        if (entity instanceof PlayerEntity player) {
             if (selected) {
-                player.sendMessage(Text.of("Cooldown time: " + cooldownTimer + "ms, Charges remaining: " + chargesRemaining/2), true);
+                player.sendMessage(Text.of("Cooldown time: " + cooldownTimer/20/67 + "s, Charges remaining: " + chargesRemaining), true);
             }
         }
         // Update cooldown timer

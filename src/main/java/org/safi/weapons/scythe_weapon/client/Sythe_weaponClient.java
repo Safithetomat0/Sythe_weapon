@@ -8,6 +8,5 @@ public class Sythe_weaponClient implements ClientModInitializer {
      */
     @Override
     public void onInitializeClient() {
-
     }
 }
