@@ -27,7 +27,8 @@ import java.util.UUID;
 
 public class ScytheItem extends SwordItem {
     private static final int MAX_CHARGES = 3;
-    private static final int COOLDOWN_TICKS = 14; // 14 seconds cooldown
+    private static final int timeInSeconds = 15;
+    private static final int COOLDOWN_TICKS = 1000 * timeInSeconds; // seconds cooldown
     private final Map<UUID, Long> cooldownTimers = new HashMap<>();
     private final Map<UUID, Integer> chargesRemainingMap = new HashMap<>();
 
@@ -68,7 +69,7 @@ public class ScytheItem extends SwordItem {
     public ActionResult useOnEntity(ItemStack stack, PlayerEntity user, LivingEntity entity, Hand hand) {
         UUID playerUUID = user.getUuid();
 
-        if (chargesRemainingMap.getOrDefault(playerUUID, 0) > 0 && !cooldownTimers.containsKey(playerUUID)) {
+        if (chargesRemainingMap.getOrDefault(playerUUID, 0) != 0) {
             if (!entity.hasStatusEffect(WeaponsMod.soulAttachedEffect)) {
                 performAction(user.getWorld(), entity);
 
@@ -79,6 +80,7 @@ public class ScytheItem extends SwordItem {
 
                 // Decrease charges
                 chargesRemainingMap.put(playerUUID, chargesRemainingMap.get(playerUUID) - 1);
+
 
                 return ActionResult.SUCCESS;
             } else {
@@ -99,14 +101,16 @@ public class ScytheItem extends SwordItem {
 
         UUID playerUUID = user.getUuid();
 
-        if (chargesRemainingMap.getOrDefault(playerUUID, 0) > 0 && !cooldownTimers.containsKey(playerUUID)) {
+        if (chargesRemainingMap.getOrDefault(playerUUID, 0) != 0) {
             LivingEntity selectedEntity = null;
 
             for (Entity entity : entities) {
                 if (entity != user && entity instanceof LivingEntity livingEntity) {
                     if (livingEntity.hasStatusEffect(WeaponsMod.soulAttachedEffect)) {
                         selectedEntity = livingEntity;
-                        break;
+                    }
+                    else {
+                        selectedEntity=null;
                     }
                 }
             }
@@ -172,7 +176,7 @@ public class ScytheItem extends SwordItem {
             PlayerEntity player = (PlayerEntity) entity;
 
             if (player.getUuid().equals(playerUUID) && selected) {
-                int cooldownSeconds = (int) Math.ceil((cooldownTimers.getOrDefault(playerUUID, System.currentTimeMillis()) - System.currentTimeMillis()) / 1000.0 + COOLDOWN_TICKS);
+                int cooldownSeconds = Math.max(0, (int) Math.ceil((cooldownTimers.getOrDefault(playerUUID, 0L) - System.currentTimeMillis()) / 1000.0));
                 player.sendMessage(Text.of("Cooldown time: " + cooldownSeconds + "s, Charges remaining: " + chargesRemainingMap.getOrDefault(playerUUID, 0)), true);
             }
         }
