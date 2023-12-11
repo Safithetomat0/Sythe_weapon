@@ -12,6 +12,7 @@
     "repo": "https://github.com/Safi/Sythe_weapon"
   },
   "license": "All-Rights-Reserved",
+  "icon": "assets/legendary_weapon/soul_attached.png",
   "environment": "*",
   "entrypoints": {
     "client": [

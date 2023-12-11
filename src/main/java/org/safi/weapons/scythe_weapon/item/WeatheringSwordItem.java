@@ -9,41 +9,95 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.SwordItem;
 import net.minecraft.item.ToolMaterial;
+import net.minecraft.particle.ParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.TypedActionResult;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.random.Random;
 import net.minecraft.world.World;
 import org.safi.weapons.scythe_weapon.WeaponsMod;
 
 import java.util.List;
+import java.util.UUID;
 
 public class WeatheringSwordItem extends SwordItem {
     private static final int MAX_CHARGES = 3;
-    private static final int CHARGE_COOLDOWN = 20 * 67 *   14; // converted to seconds
+    private static final int CHARGE_COOLDOWN = 20 * 14; // converted to seconds
     private int chargesRemaining = MAX_CHARGES;
     private int cooldownTimer = 0;
-    public WeatheringSwordItem(ToolMaterial material, int attackDamage, float attackSpeed) {
+    private UUID holderUUID = null;
+
+    public WeatheringSwordItem(ToolMaterial material, int attackDamage, float attackSpeed, UUID holderUUID) {
         super(material, attackDamage, attackSpeed, new Item.Settings());
+        this.holderUUID = holderUUID;
+    }
+    private ParticleEffect getCustomParticleParameters() {
+        // Customize this method based on your particle requirements
+        return ParticleTypes.DRAGON_BREATH;
+    }
+    private void spawnCurvedParticleLine(World world, Entity user, Entity endEntity, int particleCount) {
+        Vec3d userVelocity = user.getVelocity();
+        double userSpeed = userVelocity.length();
+
+        // Normalize the user's velocity vector
+        Vec3d normalizedVelocity = userVelocity.normalize();
+
+        for (int i = 0; i < particleCount; i++) {
+            double t = (double) i / (particleCount - 1); // t varies from 0 to 1
+
+            // Apply a sine function to create a curved line
+            double curveFactor = Math.sin(t * Math.PI);
+
+            // Use the normalized user velocity to determine the direction of the curve
+            double offsetX = normalizedVelocity.x * curveFactor;
+            double offsetY = normalizedVelocity.y * curveFactor;
+            double offsetZ = normalizedVelocity.z * curveFactor;
+
+            // Interpolate along the line connecting startEntity and endEntity
+            double interpX = MathHelper.lerp(t, user.getX(), endEntity.getX());
+            double interpY = MathHelper.lerp(t, user.getY() + user.getHeight() / 2.0, endEntity.getY() + endEntity.getHeight() / 2.0);
+            double interpZ = MathHelper.lerp(t, user.getZ(), endEntity.getZ());
+
+            // Apply the offsets to create the curved effect
+            interpX += offsetX;
+            interpY += offsetY;
+            interpZ += offsetZ;
+
+            world.addParticle(getCustomParticleParameters(), interpX, interpY, interpZ, 0, 0, 0);
+        }
+    }
+    private void performAction(World world, LivingEntity entityUsedOn) {
+        int numParticles = 30;
+        double radius = 1.5;
+
+        for (int i = 0; i < numParticles; i++) {
+            double angle = (2.0 * Math.PI * i) / numParticles;
+            double offsetX = radius * Math.cos(angle);
+            double offsetY = 1.0;
+            double offsetZ = radius * Math.sin(angle);
+
+            world.addParticle(ParticleTypes.DRAGON_BREATH, entityUsedOn.getX() + offsetX, entityUsedOn.getY() + offsetY, entityUsedOn.getZ() + offsetZ, 0, 0.2, 0);
+        }
     }
     @Override
     public ActionResult useOnEntity(ItemStack stack, PlayerEntity user, LivingEntity entity, Hand hand) {
 
         if (entity != null) {
             if (chargesRemaining > 0) {
-                if (!entity.hasStatusEffect(WeaponsMod.WEATHERING_EFFECT)) {
+                if (!entity.hasStatusEffect(WeaponsMod.soulAttachedEffect)) {
                     // Perform the action for each charge
                     performAction(user.getWorld(), entity);
 
                     // Start cooldown timer
-                    if (chargesRemaining == MAX_CHARGES) {
+                    if (chargesRemaining == MAX_CHARGES  && cooldownTimer <= 0) {
                         cooldownTimer = CHARGE_COOLDOWN;
                     }
 
-                    entity.addStatusEffect(new StatusEffectInstance(WeaponsMod.WEATHERING_EFFECT, 1000, 1)); // Adjust duration as needed
+                    entity.addStatusEffect(new StatusEffectInstance(WeaponsMod.soulAttachedEffect, 1000, 1)); // Adjust duration as needed
                     return ActionResult.SUCCESS;
                 } else {
                     return TypedActionResult.fail(user.getStackInHand(hand)).getResult();
@@ -61,6 +115,7 @@ public class WeatheringSwordItem extends SwordItem {
         List<Entity> entities = world.getEntitiesByClass(Entity.class, user.getBoundingBox().expand(1000.0, 100.0, 1000.0), entity -> entity instanceof LivingEntity);
         System.out.println("Found " + entities.size() + " entities within the range.");
 
+
         if (chargesRemaining > 0) {
             LivingEntity selectedEntity = null;
 
@@ -68,16 +123,22 @@ public class WeatheringSwordItem extends SwordItem {
                 if (entity != user && entity instanceof LivingEntity livingEntity) {
 
                     // Check if the LivingEntity has the specified status effect
-                    if (livingEntity.hasStatusEffect(WeaponsMod.WEATHERING_EFFECT)) {
+                    if (livingEntity.hasStatusEffect(WeaponsMod.soulAttachedEffect)) {
                         selectedEntity = livingEntity;
                         break; // Found the first eligible entity, exit the loop
                     }
                 }
             }
-
-            if (selectedEntity != null) {
+            // Check if the user is the holder of this weapon
+            getHolderUUID();
+            if (!user.getUuid().equals(holderUUID)) {
+                user.sendMessage(Text.of("You are not the holder of this weapon."), true);
+                return TypedActionResult.fail(user.getStackInHand(hand));
+            }
+            if (selectedEntity != null && selectedEntity.hasStatusEffect(WeaponsMod.soulAttachedEffect)) {
                 System.out.println("Adjusting acceleration for entity: " + selectedEntity);
-                user.getItemCooldownManager().set(itemStack.getItem(),20);
+                user.getItemCooldownManager().set(itemStack.getItem(), 20);
+
                 // Adjust the acceleration of the entity towards the user
                 Vec3d acceleration = new Vec3d(user.getX() - selectedEntity.getX(), user.getY() - selectedEntity.getY(), user.getZ() - selectedEntity.getZ());
 
@@ -85,26 +146,37 @@ public class WeatheringSwordItem extends SwordItem {
                 double speed = -0.2; // Set speed to half the distance
                 user.setVelocity(acceleration.multiply(speed));
 
-                spawnRedstoneParticles(world, user, selectedEntity, 100);
+                // Spawn custom particles only for the player who activated the item
+                if (user.equals(selectedEntity)) {
+                    spawnCurvedParticleLine(world, user, selectedEntity, 20);
 
-                // Perform the action for each charge
-                performAction(world, selectedEntity);
+                    // Perform the action for each charge
+                    performAction(world, selectedEntity);
+                }
 
                 // Start cooldown timer
-                if (chargesRemaining == MAX_CHARGES) {
+                if (chargesRemaining == MAX_CHARGES && cooldownTimer <= 0) {
                     cooldownTimer = CHARGE_COOLDOWN;
                 }
 
-
                 // Decrease charges
                 chargesRemaining--;
+
+                // Display messages only to the user who activated the item
+                if (user.equals(selectedEntity)) {
+                    if (cooldownTimer <= 0) {
+                        user.sendMessage(Text.of("Charges remaining: " + chargesRemaining), true);
+                    } else {
+                        user.sendMessage(Text.of("Cooldown time: " + cooldownTimer / 20 + "s, Charges remaining: " + chargesRemaining), true);
+                    }
+                }
 
                 return TypedActionResult.success(user.getStackInHand(hand));
             }
         }
 
         // Remove entities without the 'weathering effect' from the original list
-        entities.removeIf(entity -> !(entity instanceof LivingEntity) || !((LivingEntity) entity).hasStatusEffect(WeaponsMod.WEATHERING_EFFECT));
+        entities.removeIf(entity -> !(entity instanceof LivingEntity) || !((LivingEntity) entity).hasStatusEffect(WeaponsMod.soulAttachedEffect));
 
         if (entities.isEmpty()) {
             // No entity with the 'weathering effect' found
@@ -122,55 +194,32 @@ public class WeatheringSwordItem extends SwordItem {
 
         return super.postHit(stack, target, attacker);
     }
-    private static void spawnRedstoneParticles(World world, Entity startEntity, Entity endEntity, int particleCount) {
-        Random rand = world.random;
-        for (int i = 0; i < particleCount; i++) {
-            double offsetX = rand.nextDouble() * 0.2 - 0.1;
-            double offsetY = rand.nextDouble() * 0.2 - 0.1;
-            double offsetZ = rand.nextDouble() * 0.2 - 0.1;
-
-            double startX = startEntity.getX() + offsetX;
-            double startY = startEntity.getY() + startEntity.getHeight() / 2.0 + offsetY;
-            double startZ = startEntity.getZ() + offsetZ;
-
-            double endX = endEntity.getX() + offsetX;
-            double endY = endEntity.getY() + endEntity.getHeight() / 2.0 + offsetY;
-            double endZ = endEntity.getZ() + offsetZ;
-
-            world.addParticle(ParticleTypes.DRAGON_BREATH, startX, startY, startZ, endX - startX, endY - startY, endZ - startZ);
-        }
-    }
-    private void performAction(World world, LivingEntity entityusedon) {
-        int numParticles = 30; // Number of particles in the circle
-        double radius = 1.5; // Radius of the circular motion
-
-        for (int i = 0; i < numParticles; i++) {
-            double angle = (2.0 * Math.PI * i) / numParticles; // Angle for each particle
-            double offsetX = radius * Math.cos(angle); // X offset based on angle
-            double offsetY = 1.0; // Y offset (vertical position)
-            double offsetZ = radius * Math.sin(angle); // Z offset based on angle
-
-            // Add particle at the calculated position
-            world.addParticle(ParticleTypes.DRAGON_BREATH, entityusedon.getX() + offsetX, entityusedon.getY() + offsetY, entityusedon.getZ() + offsetZ, 0, 0.2, 0);
-        }
-    }
     @Override
     public void inventoryTick(ItemStack stack, World world, Entity entity, int slot, boolean selected) {
         super.inventoryTick(stack, world, entity, slot, selected);
 
-        if (entity instanceof PlayerEntity player) {
-            if (selected) {
-                player.sendMessage(Text.of("Cooldown time: " + cooldownTimer/20/67 + "s, Charges remaining: " + chargesRemaining), true);
-            }
-        }
         // Update cooldown timer
         if (cooldownTimer > 0) {
             cooldownTimer--;
         }
 
+        if (entity instanceof PlayerEntity player) {
+            if (selected) {
+                if (chargesRemaining==MAX_CHARGES){
+                    player.sendMessage(Text.of("Charges remaining: " + chargesRemaining), true);
+                }else{
+                    player.sendMessage(Text.of("Cooldown time: " + cooldownTimer/20 + "s, Charges remaining: " + chargesRemaining), true);
+                }
+            }
+        }
+
         // Recharge if charges are less than max
-        if (chargesRemaining < MAX_CHARGES && cooldownTimer <= 0) {
+        if (chargesRemaining < MAX_CHARGES && cooldownTimer <= 1) {
             chargesRemaining++;
         }
+    }
+    public UUID getHolderUUID() {
+
+        return holderUUID;
     }
 }
