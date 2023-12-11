@@ -7,14 +7,12 @@ import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.util.Identifier;
 import org.safi.weapons.scythe_weapon.effect.WeatheringEffect;
-import org.safi.weapons.scythe_weapon.item.WeatheringSwordItem;
-
-import java.util.UUID;
+import org.safi.weapons.scythe_weapon.item.ScytheItem;
 
 public class WeaponsMod implements ModInitializer {
     public static final String MOD_ID = "legendary_weapon";
     public static final WeatheringEffect soulAttachedEffect = new WeatheringEffect();
-    public static final SwordItem WEATHERING_SWORD = new WeatheringSwordItem(ToolMaterials.IRON, 1, -0.4F,new UUID(1000000,1));
+    public static final SwordItem WEATHERING_SWORD = new ScytheItem(ToolMaterials.IRON, 1, -0.4F);
 
 
     @Override
