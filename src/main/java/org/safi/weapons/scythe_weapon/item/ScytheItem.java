@@ -18,6 +18,7 @@ import net.minecraft.util.TypedActionResult;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import org.jetbrains.annotations.NotNull;
 import org.safi.weapons.scythe_weapon.WeaponsMod;
 
 import java.util.HashMap;
@@ -31,7 +32,8 @@ public class ScytheItem extends SwordItem {
     private static final int COOLDOWN_TICKS = 1000 * timeInSeconds; // seconds cooldown
     private final Map<UUID, Long> cooldownTimers = new HashMap<>();
     private final Map<UUID, Integer> chargesRemainingMap = new HashMap<>();
-
+    private static boolean push = false;
+    private static Vec3d acceleration = null;
     public ScytheItem(ToolMaterial material, int attackDamage, float attackSpeed) {
         super(material, attackDamage, attackSpeed, new Item.Settings());
     }
@@ -66,29 +68,13 @@ public class ScytheItem extends SwordItem {
     }
 
     @Override
-    public ActionResult useOnEntity(ItemStack stack, PlayerEntity user, LivingEntity entity, Hand hand) {
+    public ActionResult useOnEntity(ItemStack stack, @NotNull PlayerEntity user, LivingEntity entity, Hand hand) {
         UUID playerUUID = user.getUuid();
-
-        if (chargesRemainingMap.getOrDefault(playerUUID, 0) != 0) {
-            if (!entity.hasStatusEffect(WeaponsMod.soulAttachedEffect)) {
-                performAction(user.getWorld(), entity);
-
-                // Start cooldown timer
-                cooldownTimers.put(playerUUID, System.currentTimeMillis() + COOLDOWN_TICKS);
-
-                entity.addStatusEffect(new StatusEffectInstance(WeaponsMod.soulAttachedEffect, 1000, 1));
-
-                // Decrease charges
-                chargesRemainingMap.put(playerUUID, chargesRemainingMap.get(playerUUID) - 1);
-
-
-                return ActionResult.SUCCESS;
-            } else {
-                return ActionResult.FAIL;
-            }
-        }
-
-        return ActionResult.PASS;
+        performAction(user.getWorld(), entity);
+        System.out.println(entity+"given soul attached");
+        user.addStatusEffect(new StatusEffectInstance(WeaponsMod.soulAttachedEffect, 1000, 1));
+        entity.addStatusEffect(new StatusEffectInstance(WeaponsMod.soulAttachedEffect, 1000, 1));
+        return ActionResult.SUCCESS;
     }
 
     @Override
@@ -96,54 +82,45 @@ public class ScytheItem extends SwordItem {
         System.out.println("Starting use method...");
         ItemStack itemStack = new ItemStack(WeaponsMod.WEATHERING_SWORD);
 
-        List<Entity> entities = world.getEntitiesByClass(Entity.class, user.getBoundingBox().expand(1000.0, 100.0, 1000.0), entity -> entity instanceof LivingEntity);
-        System.out.println("Found " + entities.size() + " entities within the range.");
-
         UUID playerUUID = user.getUuid();
+        System.out.println("charges remaining before use: " + chargesRemainingMap.get(playerUUID));
 
-        if (chargesRemainingMap.getOrDefault(playerUUID, 0) != 0) {
-            LivingEntity selectedEntity = null;
+        if (!world.isClient) {
+            System.out.println("This is server function");
 
-            for (Entity entity : entities) {
-                if (entity != user && entity instanceof LivingEntity livingEntity) {
-                    if (livingEntity.hasStatusEffect(WeaponsMod.soulAttachedEffect)) {
-                        selectedEntity = livingEntity;
-                    }
-                    else {
-                        selectedEntity=null;
+            if (chargesRemainingMap.get(playerUUID) > 0) {
+                List<Entity> entities = world.getEntitiesByClass(Entity.class, user.getBoundingBox().expand(1000.0, 100.0, 1000.0), entity -> entity instanceof LivingEntity);
+
+                LivingEntity selectedEntity = entities.stream()
+                        .filter(entity -> entity != user && entity instanceof LivingEntity livingEntity && livingEntity.hasStatusEffect(WeaponsMod.soulAttachedEffect))
+                        .map(entity -> (LivingEntity) entity)
+                        .findFirst()
+                        .orElse(null);
+
+                if (selectedEntity != null) {
+                    System.out.println("Entity exists");
+                    if (selectedEntity.hasStatusEffect(WeaponsMod.soulAttachedEffect)) {
+                        // Adjust the acceleration of the entity towards the user
+                        acceleration = new Vec3d(user.getX() - selectedEntity.getX(), user.getY() - selectedEntity.getY(), user.getZ() - selectedEntity.getZ()).normalize();
+                        push = true;
+
+                        spawnCurvedParticleLine(world, user, selectedEntity);
+                        performAction(world, selectedEntity);
+
+                        // Start cooldown timer
+                        cooldownTimers.put(playerUUID, System.currentTimeMillis() + COOLDOWN_TICKS);
+
+                        // Decrease charges remaining
+                        chargesRemainingMap.put(playerUUID, chargesRemainingMap.get(playerUUID) - 1);
+
+                        user.getItemCooldownManager().set(itemStack.getItem(), 30);
+
+                        System.out.println("charges remaining after use: " + chargesRemainingMap.get(playerUUID));
+
+                        return TypedActionResult.success(user.getStackInHand(hand));
                     }
                 }
             }
-
-            if (selectedEntity != null && selectedEntity.hasStatusEffect(WeaponsMod.soulAttachedEffect)) {
-                System.out.println("Adjusting acceleration for entity: " + selectedEntity);
-
-                // Adjust the acceleration of the entity towards the user
-                Vec3d acceleration = new Vec3d(user.getX() - selectedEntity.getX(), user.getY() - selectedEntity.getY(), user.getZ() - selectedEntity.getZ());
-
-                double speed = -0.2;
-                user.setVelocity(acceleration.multiply(speed));
-
-                // Spawn custom particles only for the player who activated the item
-                if (user.equals(selectedEntity)) {
-                    spawnCurvedParticleLine(world, user, selectedEntity);
-                    performAction(world, selectedEntity);
-                }
-
-                // Start cooldown timer
-                cooldownTimers.put(playerUUID, System.currentTimeMillis() + COOLDOWN_TICKS);
-
-                // Decrease charges
-                chargesRemainingMap.put(playerUUID, chargesRemainingMap.get(playerUUID) - 1);
-
-                return TypedActionResult.success(user.getStackInHand(hand));
-            }
-        }
-
-        entities.removeIf(entity -> !(entity instanceof LivingEntity) || !((LivingEntity) entity).hasStatusEffect(WeaponsMod.soulAttachedEffect));
-
-        if (entities.isEmpty()) {
-            System.out.println("No entity with the 'weathering effect' found.");
         }
 
         System.out.println("Finished use method.");
@@ -174,11 +151,22 @@ public class ScytheItem extends SwordItem {
 
         if (entity instanceof PlayerEntity) {
             PlayerEntity player = (PlayerEntity) entity;
+            if (cooldownTimers.containsKey(playerUUID) && chargesRemainingMap.containsKey(playerUUID)) {
+                if (player.getUuid().equals(playerUUID) && selected) {
+                    int cooldownSeconds = Math.max(0, (int) Math.ceil((cooldownTimers.getOrDefault(playerUUID, 0L) - System.currentTimeMillis()) / 1000.0));
 
-            if (player.getUuid().equals(playerUUID) && selected) {
-                int cooldownSeconds = Math.max(0, (int) Math.ceil((cooldownTimers.getOrDefault(playerUUID, 0L) - System.currentTimeMillis()) / 1000.0));
-                player.sendMessage(Text.of("Cooldown time: " + cooldownSeconds + "s, Charges remaining: " + chargesRemainingMap.getOrDefault(playerUUID, 0)), true);
+                    if (cooldownSeconds % 20 == 0) {
+                        player.sendMessage(Text.of("Cooldown time: " + cooldownSeconds + "s, Charges remaining: " + chargesRemainingMap.get(playerUUID)), true);
+                    }
+                }
             }
+        }
+
+        if (push && acceleration != null) {
+            System.out.println("Adjusting acceleration for: " + entity);
+            double speed = 0.2; // Adjust speed as needed (positive to push towards)
+            entity.addVelocity(acceleration.x * speed, acceleration.y * speed, acceleration.z * speed);
+            push = false;
         }
 
         // Recharge if charges are less than max
