@@ -9,14 +9,13 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.SwordItem;
 import net.minecraft.item.ToolMaterial;
-import net.minecraft.particle.ParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.TypedActionResult;
-import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.random.Random;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.NotNull;
 import org.safi.weapons.scythe_weapon.WeaponsMod;
@@ -30,26 +29,33 @@ public class ScytheItem extends SwordItem {
     private static final int MAX_CHARGES = 3;
     private static final int timeInSeconds = 15;
     private static final int COOLDOWN_TICKS = 1000 * timeInSeconds; // seconds cooldown
+    private final double speed_power = -0.2; // Adjust speed as needed (positive to push towards)
     private final Map<UUID, Long> cooldownTimers = new HashMap<>();
+    private final Map<UUID, Boolean> push = new HashMap<>();
     private final Map<UUID, Integer> chargesRemainingMap = new HashMap<>();
-    private static boolean push = false;
-    private static Vec3d acceleration = null;
+    private LivingEntity selectedEntity =null;
+
     public ScytheItem(ToolMaterial material, int attackDamage, float attackSpeed) {
         super(material, attackDamage, attackSpeed, new Item.Settings());
     }
 
-    private ParticleEffect getCustomParticleParameters() {
-        return ParticleTypes.DRAGON_BREATH;
-    }
+    private static void spawnLinedParticles(World world, Entity startEntity, Entity endEntity, int particleCount) {
+        Random rand = world.random;
+        for (int i = 0; i < particleCount; i++) {
+            double offsetX = rand.nextDouble() * 0.2 - 0.1;
+            double offsetY = rand.nextDouble() * 0.2 - 0.1;
+            double offsetZ = rand.nextDouble() * 0.2 - 0.1;
 
-    private void spawnCurvedParticleLine(World world, Entity startEntity, Entity endEntity) {
-        for (int i = 0; i < 20; i++) {
-            double t = (double) i / (20 - 1);
-            double interpX = MathHelper.lerp(t, startEntity.getX(), endEntity.getX());
-            double interpY = MathHelper.lerp(t, startEntity.getY() + startEntity.getHeight() / 2.0, endEntity.getY() + endEntity.getHeight() / 2.0);
-            double interpZ = MathHelper.lerp(t, startEntity.getZ(), endEntity.getZ());
+            double startX = startEntity.getX() + offsetX;
+            double startY = startEntity.getY() + startEntity.getHeight() / 2.0 + offsetY;
+            double startZ = startEntity.getZ() + offsetZ;
 
-            world.addParticle(getCustomParticleParameters(), interpX, interpY, interpZ, 0, 0, 0);
+            double endX = endEntity.getX() + offsetX;
+            double endY = endEntity.getY() + endEntity.getHeight() / 2.0 + offsetY;
+            double endZ = endEntity.getZ() + offsetZ;
+
+            world.addParticle(ParticleTypes.DRAGON_BREATH, startX, startY, startZ,
+                    endX - startX, endY - startY, endZ - startZ);
         }
     }
 
@@ -71,66 +77,97 @@ public class ScytheItem extends SwordItem {
     public ActionResult useOnEntity(ItemStack stack, @NotNull PlayerEntity user, LivingEntity entity, Hand hand) {
         UUID playerUUID = user.getUuid();
         performAction(user.getWorld(), entity);
-        System.out.println(entity+"given soul attached");
+        System.out.println(entity + "given soul attached");
         user.addStatusEffect(new StatusEffectInstance(WeaponsMod.soulAttachedEffect, 1000, 1));
         entity.addStatusEffect(new StatusEffectInstance(WeaponsMod.soulAttachedEffect, 1000, 1));
+        if (!user.getWorld().isClient){
+            user.sendMessage(Text.of("You Have soul attached something"), false);
+        }
         return ActionResult.SUCCESS;
     }
 
     @Override
     public TypedActionResult<ItemStack> use(World world, PlayerEntity user, Hand hand) {
-        System.out.println("Starting use method...");
-        ItemStack itemStack = new ItemStack(WeaponsMod.WEATHERING_SWORD);
-
-        UUID playerUUID = user.getUuid();
-        System.out.println("charges remaining before use: " + chargesRemainingMap.get(playerUUID));
-
         if (!world.isClient) {
-            System.out.println("This is server function");
+            System.out.println("Starting use method...");
+            ItemStack itemStack = new ItemStack(WeaponsMod.WEATHERING_SWORD);
 
-            if (chargesRemainingMap.get(playerUUID) > 0) {
-                List<Entity> entities = world.getEntitiesByClass(Entity.class, user.getBoundingBox().expand(1000.0, 100.0, 1000.0), entity -> entity instanceof LivingEntity);
+            UUID playerUUID = user.getUuid();
+            System.out.println("charges remaining before use: " + chargesRemainingMap.get(playerUUID));
 
-                LivingEntity selectedEntity = entities.stream()
-                        .filter(entity -> entity != user && entity instanceof LivingEntity livingEntity && livingEntity.hasStatusEffect(WeaponsMod.soulAttachedEffect))
-                        .map(entity -> (LivingEntity) entity)
-                        .findFirst()
-                        .orElse(null);
+            List<Entity> entities = world.getEntitiesByClass(Entity.class,
+                    user.getBoundingBox().expand(1000.0, 100.0, 1000.0), searchEntities -> searchEntities instanceof LivingEntity);
+            System.out.println("got near entities");
 
-                if (selectedEntity != null) {
-                    System.out.println("Entity exists");
-                    if (selectedEntity.hasStatusEffect(WeaponsMod.soulAttachedEffect)) {
-                        // Adjust the acceleration of the entity towards the user
-                        acceleration = new Vec3d(user.getX() - selectedEntity.getX(), user.getY() - selectedEntity.getY(), user.getZ() - selectedEntity.getZ()).normalize();
-                        push = true;
-
-                        spawnCurvedParticleLine(world, user, selectedEntity);
-                        performAction(world, selectedEntity);
-
-                        // Start cooldown timer
-                        cooldownTimers.put(playerUUID, System.currentTimeMillis() + COOLDOWN_TICKS);
-
-                        // Decrease charges remaining
-                        chargesRemainingMap.put(playerUUID, chargesRemainingMap.get(playerUUID) - 1);
-
-                        user.getItemCooldownManager().set(itemStack.getItem(), 30);
-
-                        System.out.println("charges remaining after use: " + chargesRemainingMap.get(playerUUID));
-
-                        return TypedActionResult.success(user.getStackInHand(hand));
+            for (Entity searchEntities : entities) {
+                if (user != searchEntities && searchEntities instanceof LivingEntity livingEntity) {
+                    if (hasSoulAttach(livingEntity)) {
+                        selectedEntity = livingEntity;
+                        System.out.println("living entity set to selected entity");
+                    } else if (!hasSoulAttach(selectedEntity)) {
+                        push.put(playerUUID, false);
+                        System.out.println("entity has effect doesn't exist");
                     }
                 }
             }
-        }
+            if (selectedEntity == null) {
+                push.put(playerUUID, false);
+                System.out.println("selectedEntity==null");
+                return TypedActionResult.fail(user.getStackInHand(hand));
+            }
+            if (chargesRemainingMap.getOrDefault(playerUUID, MAX_CHARGES) > 0) {
+                System.out.println("chargesRemainingMap.getOrDefault(playerUUID,MAX_CHARGES)>0 : success");
+                chargesRemainingMap.computeIfAbsent(playerUUID, uuid -> MAX_CHARGES); // Initialize here
 
-        System.out.println("Finished use method.");
+                if (selectedEntity == null) {
+                    System.out.println("failed");
+                    push.put(playerUUID, false);
+                    return TypedActionResult.fail(user.getStackInHand(hand));
+                } else {
+                    System.out.println(selectedEntity);
+                    if (selectedEntity.hasStatusEffect(WeaponsMod.soulAttachedEffect)) {
+
+                        System.out.println("This is server function");
+                        // Spawn particles
+                        spawnLinedParticles(user.getWorld(), user, selectedEntity, 20);
+                        performAction(user.getWorld(), selectedEntity);
+                        user.getItemCooldownManager().set(itemStack.getItem(), 30);
+
+                        // Move player
+                        System.out.println("Adjusting acceleration for: " + user);
+                        push.put(playerUUID,true);
+
+                        // Start cooldown timer
+                        if (chargesRemainingMap.get(playerUUID) >= MAX_CHARGES) {
+                            // Start cooldown timer
+                            cooldownTimers.put(playerUUID, System.currentTimeMillis() + COOLDOWN_TICKS);
+                        }
+                        // Decrease charges remaining
+                        chargesRemainingMap.put(playerUUID, chargesRemainingMap.get(playerUUID) - 1);
+
+                        System.out.println("Finished use method.");
+                        return TypedActionResult.success(user.getStackInHand(hand));
+
+                    } else {
+                        System.out.println("failed");
+                        selectedEntity = null;
+                        push.put(playerUUID,false);
+                        return TypedActionResult.fail(user.getStackInHand(hand));
+                    }
+                }
+            } else {
+                System.out.println("chargesRemainingMap.getOrDefault(playerUUID,MAX_CHARGES)>0 : fail");
+                push.put(playerUUID,false);
+                return TypedActionResult.fail(user.getStackInHand(hand));
+            }
+        }
         return TypedActionResult.pass(user.getStackInHand(hand));
     }
 
     @Override
     public boolean postHit(ItemStack stack, LivingEntity target, LivingEntity attacker) {
         if (target != null) {
-            target.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 100, 1));
+            target.addStatusEffect(new StatusEffectInstance(StatusEffects.WITHER, 200, 1));
         }
 
         return super.postHit(stack, target, attacker);
@@ -140,39 +177,48 @@ public class ScytheItem extends SwordItem {
     public void inventoryTick(ItemStack stack, World world, Entity entity, int slot, boolean selected) {
         super.inventoryTick(stack, world, entity, slot, selected);
 
+        stack.setHolder(entity);
         UUID playerUUID = entity.getUuid();
 
-        // Update cooldown timer
-        if (cooldownTimers.containsKey(playerUUID) && cooldownTimers.get(playerUUID) <= System.currentTimeMillis()) {
-            cooldownTimers.remove(playerUUID);
-        }
+        if (push.containsKey(playerUUID) && selectedEntity != null) {
+            // Adjust the acceleration of the entity towards the user
 
-        stack.setHolder(entity);
+            if (push.getOrDefault(playerUUID, false)) {
+                Vec3d acceleration = new Vec3d(entity.getX() - selectedEntity.getX(),
+                        entity.getY() - selectedEntity.getY(), entity.getZ() - selectedEntity.getZ());
+                Vec3d force = new Vec3d(acceleration.x * speed_power, acceleration.y * speed_power, acceleration.z * speed_power);
+                entity.addVelocity(force.x, force.y, force.z);
+                push.put(playerUUID, false);
+                System.out.println("pushed");
+            }
 
-        if (entity instanceof PlayerEntity) {
-            PlayerEntity player = (PlayerEntity) entity;
+            chargesRemainingMap.computeIfAbsent(playerUUID, uuid -> MAX_CHARGES);
+
+            if (cooldownTimers.containsKey(playerUUID)) {
+                if (cooldownTimers.get(playerUUID) <= System.currentTimeMillis()) {
+                    cooldownTimers.remove(playerUUID);
+                    chargesRemainingMap.remove(playerUUID);
+                }
+            }
+
             if (cooldownTimers.containsKey(playerUUID) && chargesRemainingMap.containsKey(playerUUID)) {
-                if (player.getUuid().equals(playerUUID) && selected) {
-                    int cooldownSeconds = Math.max(0, (int) Math.ceil((cooldownTimers.getOrDefault(playerUUID, 0L) - System.currentTimeMillis()) / 1000.0));
-
-                    if (cooldownSeconds % 20 == 0) {
-                        player.sendMessage(Text.of("Cooldown time: " + cooldownSeconds + "s, Charges remaining: " + chargesRemainingMap.get(playerUUID)), true);
-                    }
+                if (entity instanceof PlayerEntity && selected) {
+                    int cooldownSeconds = Math.max(0, (int) Math.ceil(
+                            (cooldownTimers.get(playerUUID) - System.currentTimeMillis()) / 1000.0));
+                    ((PlayerEntity) entity).sendMessage(Text.of(
+                                    cooldownSeconds + "s " + "remaining to charge, "
+                                            + chargesRemainingMap.get(playerUUID) + " Charges Remaining."),
+                            true);
+                }
+            } else {
+                if (entity instanceof PlayerEntity && selected) {
+                    ((PlayerEntity) entity).sendMessage(Text.of("Fully charged"), true);
                 }
             }
         }
+    }
 
-        if (push && acceleration != null) {
-            System.out.println("Adjusting acceleration for: " + entity);
-            double speed = 0.2; // Adjust speed as needed (positive to push towards)
-            entity.addVelocity(acceleration.x * speed, acceleration.y * speed, acceleration.z * speed);
-            push = false;
-        }
-
-        // Recharge if charges are less than max
-        chargesRemainingMap.put(playerUUID, chargesRemainingMap.getOrDefault(playerUUID, MAX_CHARGES));
-        if (chargesRemainingMap.get(playerUUID) < MAX_CHARGES && !cooldownTimers.containsKey(playerUUID)) {
-            chargesRemainingMap.put(playerUUID, chargesRemainingMap.get(playerUUID) + 1);
-        }
+    private boolean hasSoulAttach(LivingEntity entity) {
+        return entity != null && entity.hasStatusEffect(WeaponsMod.soulAttachedEffect);
     }
 }

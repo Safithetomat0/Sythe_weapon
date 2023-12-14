@@ -1,8 +1,8 @@
 {
 	"credit": "Made with Blockbench",
 	"textures": {
-		"2": "legendary_weapon:item/scythe",
-		"particle": "legendary_weapon:item/scythe"
+		"2": "legendary_weapon:item/scythe_3d",
+		"particle": "legendary_weapon:item/scythe_3d"
 	},
 	"elements": [
 		{
