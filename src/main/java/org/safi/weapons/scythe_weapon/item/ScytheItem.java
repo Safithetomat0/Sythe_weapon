@@ -29,7 +29,7 @@ public class ScytheItem extends SwordItem {
     private static final int MAX_CHARGES = 3;
     private static final int timeInSeconds = 15;
     private static final int COOLDOWN_TICKS = 1000 * timeInSeconds; // seconds cooldown
-    private final double speed_power = -0.2; // Adjust speed as needed (positive to push towards)
+    private final double speed_power = -0.12; // Adjust speed as needed (positive to push towards)
     private final Map<UUID, Long> cooldownTimers = new HashMap<>();
     private final Map<UUID, Boolean> push = new HashMap<>();
     private final Map<UUID, Integer> chargesRemainingMap = new HashMap<>();
@@ -41,6 +41,7 @@ public class ScytheItem extends SwordItem {
 
     private static void spawnLinedParticles(World world, Entity startEntity, Entity endEntity, int particleCount) {
         Random rand = world.random;
+
         for (int i = 0; i < particleCount; i++) {
             double offsetX = rand.nextDouble() * 0.2 - 0.1;
             double offsetY = rand.nextDouble() * 0.2 - 0.1;
@@ -54,12 +55,17 @@ public class ScytheItem extends SwordItem {
             double endY = endEntity.getY() + endEntity.getHeight() / 2.0 + offsetY;
             double endZ = endEntity.getZ() + offsetZ;
 
-            world.addParticle(ParticleTypes.DRAGON_BREATH, startX, startY, startZ,
+            // Adjust lifespan based on particle count and desired duration (2 seconds)
+            int lifespan = 40;  // Each tick is 1/20th of a second, so 20 ticks = 1 second
+            world.addParticle(ParticleTypes.DRAGON_BREATH, true, startX, startY, startZ,
                     endX - startX, endY - startY, endZ - startZ);
         }
     }
 
     private void performAction(World world, LivingEntity entityUsedOn) {
+        if (entityUsedOn == null) {
+            return;  // Added null check
+        }
         int numParticles = 30;
         double radius = 1.5;
 
@@ -75,6 +81,9 @@ public class ScytheItem extends SwordItem {
 
     @Override
     public ActionResult useOnEntity(ItemStack stack, @NotNull PlayerEntity user, LivingEntity entity, Hand hand) {
+        if (entity == null) {
+            return ActionResult.FAIL;  // Added null check
+        }
         UUID playerUUID = user.getUuid();
         performAction(user.getWorld(), entity);
         System.out.println(entity + "given soul attached");
@@ -88,55 +97,43 @@ public class ScytheItem extends SwordItem {
 
     @Override
     public TypedActionResult<ItemStack> use(World world, PlayerEntity user, Hand hand) {
-        if (!world.isClient) {
-            System.out.println("Starting use method...");
-            ItemStack itemStack = new ItemStack(WeaponsMod.WEATHERING_SWORD);
+        if (world == null || user == null) {
+            return TypedActionResult.pass(ItemStack.EMPTY);  // Added null checks
+        }
+        System.out.println("Starting use method...");
+        ItemStack itemStack = new ItemStack(WeaponsMod.WEATHERING_SWORD);
 
-            UUID playerUUID = user.getUuid();
-            System.out.println("charges remaining before use: " + chargesRemainingMap.get(playerUUID));
+        UUID playerUUID = user.getUuid();
+        System.out.println("charges remaining before use: " + chargesRemainingMap.get(playerUUID));
 
-            List<Entity> entities = world.getEntitiesByClass(Entity.class,
-                    user.getBoundingBox().expand(1000.0, 100.0, 1000.0), searchEntities -> searchEntities instanceof LivingEntity);
-            System.out.println("got near entities");
+        if (selectedEntity == null || selectedEntity.isDead()) {
+            System.out.println("selectedEntity==null");
+            return TypedActionResult.fail(user.getStackInHand(hand));
+        }
 
-            for (Entity searchEntities : entities) {
-                if (user != searchEntities && searchEntities instanceof LivingEntity livingEntity) {
-                    if (hasSoulAttach(livingEntity)) {
-                        selectedEntity = livingEntity;
-                        System.out.println("living entity set to selected entity");
-                    } else if (!hasSoulAttach(selectedEntity)) {
-                        push.put(playerUUID, false);
-                        System.out.println("entity has effect doesn't exist");
-                    }
-                }
-            }
-            if (selectedEntity == null) {
-                push.put(playerUUID, false);
-                System.out.println("selectedEntity==null");
+        if (chargesRemainingMap.getOrDefault(playerUUID, MAX_CHARGES) > 0) {
+            System.out.println("chargesRemainingMap.getOrDefault(playerUUID,MAX_CHARGES)>0 : success");
+            chargesRemainingMap.computeIfAbsent(playerUUID, uuid -> MAX_CHARGES); // Initialize here
+
+            if (selectedEntity == null || selectedEntity.isDead()) {
+                System.out.println("failed");
                 return TypedActionResult.fail(user.getStackInHand(hand));
-            }
-            if (chargesRemainingMap.getOrDefault(playerUUID, MAX_CHARGES) > 0) {
-                System.out.println("chargesRemainingMap.getOrDefault(playerUUID,MAX_CHARGES)>0 : success");
-                chargesRemainingMap.computeIfAbsent(playerUUID, uuid -> MAX_CHARGES); // Initialize here
+            } else {
+                System.out.println(selectedEntity);
+                if (hasSoulAttach(user) && hasSoulAttach(selectedEntity)) {
 
-                if (selectedEntity == null) {
-                    System.out.println("failed");
-                    push.put(playerUUID, false);
-                    return TypedActionResult.fail(user.getStackInHand(hand));
-                } else {
-                    System.out.println(selectedEntity);
-                    if (selectedEntity.hasStatusEffect(WeaponsMod.soulAttachedEffect)) {
+                    System.out.println("This is server function");
+                    // Spawn particles
+                    spawnLinedParticles(user.getWorld(), user, selectedEntity, 20);
+                    performAction(user.getWorld(), selectedEntity);
+                    user.getItemCooldownManager().set(itemStack.getItem(), 20);
 
-                        System.out.println("This is server function");
-                        // Spawn particles
-                        spawnLinedParticles(user.getWorld(), user, selectedEntity, 20);
-                        performAction(user.getWorld(), selectedEntity);
-                        user.getItemCooldownManager().set(itemStack.getItem(), 30);
-
-                        // Move player
-                        System.out.println("Adjusting acceleration for: " + user);
-                        push.put(playerUUID,true);
-
+                    // Move player
+                    System.out.println("Adjusting acceleration for: " + user);
+                    if (hasSoulAttach(user)) {
+                        push.put(playerUUID, true);
+                    }
+                    if (!world.isClient) {
                         // Start cooldown timer
                         if (chargesRemainingMap.get(playerUUID) >= MAX_CHARGES) {
                             // Start cooldown timer
@@ -144,24 +141,20 @@ public class ScytheItem extends SwordItem {
                         }
                         // Decrease charges remaining
                         chargesRemainingMap.put(playerUUID, chargesRemainingMap.get(playerUUID) - 1);
-
-                        System.out.println("Finished use method.");
-                        return TypedActionResult.success(user.getStackInHand(hand));
-
-                    } else {
-                        System.out.println("failed");
-                        selectedEntity = null;
-                        push.put(playerUUID,false);
-                        return TypedActionResult.fail(user.getStackInHand(hand));
                     }
+                    System.out.println("Finished use method.");
+                    return TypedActionResult.success(user.getStackInHand(hand));
+
+                } else {
+                    System.out.println("failed");
+                    selectedEntity = null;
+                    return TypedActionResult.fail(user.getStackInHand(hand));
                 }
-            } else {
-                System.out.println("chargesRemainingMap.getOrDefault(playerUUID,MAX_CHARGES)>0 : fail");
-                push.put(playerUUID,false);
-                return TypedActionResult.fail(user.getStackInHand(hand));
             }
+        } else {
+            System.out.println("chargesRemainingMap.getOrDefault(playerUUID,MAX_CHARGES)>0 : fail");
+            return TypedActionResult.fail(user.getStackInHand(hand));
         }
-        return TypedActionResult.pass(user.getStackInHand(hand));
     }
 
     @Override
@@ -180,12 +173,34 @@ public class ScytheItem extends SwordItem {
         stack.setHolder(entity);
         UUID playerUUID = entity.getUuid();
 
+        if (selected) {
+            List<Entity> entities = world.getEntitiesByClass(Entity.class,
+                    entity.getBoundingBox().expand(1000.0, 100.0, 1000.0), searchEntities -> searchEntities instanceof LivingEntity);
+            System.out.println("got near entities");
+
+            double nearestDistanceSquared = Double.MAX_VALUE;
+            if (!world.isClient) {
+                for (Entity searchEntities : entities) {
+                    if (searchEntities instanceof LivingEntity livingEntity && entity != searchEntities && hasSoulAttach(livingEntity)) {
+                        double distanceSquared = entity.squaredDistanceTo(searchEntities);
+
+                        if (distanceSquared < nearestDistanceSquared) {
+                            nearestDistanceSquared = distanceSquared;
+                            selectedEntity = livingEntity;
+                            System.out.println("Living entity set to selected entity");
+
+                        }
+                    }
+                }
+            }
+        }
+
         if (push.containsKey(playerUUID) && selectedEntity != null) {
             // Adjust the acceleration of the entity towards the user
 
             if (push.getOrDefault(playerUUID, false)) {
                 Vec3d acceleration = new Vec3d(entity.getX() - selectedEntity.getX(),
-                        entity.getY() - selectedEntity.getY(), entity.getZ() - selectedEntity.getZ());
+                        entity.getY() - 3 - selectedEntity.getY(), entity.getZ() - selectedEntity.getZ());
                 Vec3d force = new Vec3d(acceleration.x * speed_power, acceleration.y * speed_power, acceleration.z * speed_power);
                 entity.addVelocity(force.x, force.y, force.z);
                 push.put(playerUUID, false);
@@ -201,18 +216,20 @@ public class ScytheItem extends SwordItem {
                 }
             }
 
-            if (cooldownTimers.containsKey(playerUUID) && chargesRemainingMap.containsKey(playerUUID)) {
-                if (entity instanceof PlayerEntity && selected) {
-                    int cooldownSeconds = Math.max(0, (int) Math.ceil(
-                            (cooldownTimers.get(playerUUID) - System.currentTimeMillis()) / 1000.0));
-                    ((PlayerEntity) entity).sendMessage(Text.of(
-                                    cooldownSeconds + "s " + "remaining to charge, "
-                                            + chargesRemainingMap.get(playerUUID) + " Charges Remaining."),
-                            true);
-                }
-            } else {
-                if (entity instanceof PlayerEntity && selected) {
-                    ((PlayerEntity) entity).sendMessage(Text.of("Fully charged"), true);
+            if (!world.isClient) {
+                if (cooldownTimers.containsKey(playerUUID) && chargesRemainingMap.containsKey(playerUUID)) {
+                    if (entity instanceof PlayerEntity && selected) {
+                        int cooldownSeconds = Math.max(0, (int) Math.ceil(
+                                (cooldownTimers.get(playerUUID) - System.currentTimeMillis()) / 1000.0));
+                        ((PlayerEntity) entity).sendMessage(Text.of(
+                                        cooldownSeconds + "s " + "remaining to charge, "
+                                                + chargesRemainingMap.get(playerUUID) + " Charges Remaining."),
+                                true);
+                    }
+                } else {
+                    if (entity instanceof PlayerEntity && selected) {
+                        ((PlayerEntity) entity).sendMessage(Text.of("Fully charged"), true);
+                    }
                 }
             }
         }
