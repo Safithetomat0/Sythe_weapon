@@ -1,5 +1,7 @@
 package org.safi.weapons.scythe_weapon.item;
 
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
@@ -10,6 +12,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.SwordItem;
 import net.minecraft.item.ToolMaterial;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
@@ -19,11 +22,10 @@ import net.minecraft.util.math.random.Random;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.NotNull;
 import org.safi.weapons.scythe_weapon.WeaponsMod;
+import org.safi.weapons.scythe_weapon.networking.Packets;
+import org.safi.weapons.scythe_weapon.packet.ModMessages;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 public class ScytheItem extends SwordItem {
     private static final int MAX_CHARGES = 3;
@@ -131,7 +133,15 @@ public class ScytheItem extends SwordItem {
                     // Move player
                     System.out.println("Adjusting acceleration for: " + user);
                     if (hasSoulAttach(user)) {
-                        push.put(playerUUID, true);
+                        Vec3d acceleration = new Vec3d(user.getX() - selectedEntity.getX(),
+                                user.getY() - 3 - selectedEntity.getY(), user.getZ() - selectedEntity.getZ());
+                        Vec3d force = new Vec3d(acceleration.x * speed_power, acceleration.y * speed_power, acceleration.z * speed_power);
+
+                        user.setVelocity(force);
+
+                        System.out.println("pushed");
+                        System.out.println("force: " + force);
+                        System.out.println("acceleration: " + acceleration);
                     }
                     if (!world.isClient) {
                         // Start cooldown timer
@@ -175,47 +185,10 @@ public class ScytheItem extends SwordItem {
 
         if (selected) {
             List<Entity> entities = world.getEntitiesByClass(Entity.class,
-                    entity.getBoundingBox().expand(1000.0, 100.0, 1000.0), searchEntities -> searchEntities instanceof LivingEntity);
-            System.out.println("got near entities");
+                    entity.getBoundingBox().expand(80.0, 100.0, 80.0), searchEntities -> searchEntities instanceof LivingEntity);
+            //System.out.println("got near entities");
 
             double nearestDistanceSquared = Double.MAX_VALUE;
-            if (!world.isClient) {
-                for (Entity searchEntities : entities) {
-                    if (searchEntities instanceof LivingEntity livingEntity && entity != searchEntities && hasSoulAttach(livingEntity)) {
-                        double distanceSquared = entity.squaredDistanceTo(searchEntities);
-
-                        if (distanceSquared < nearestDistanceSquared) {
-                            nearestDistanceSquared = distanceSquared;
-                            selectedEntity = livingEntity;
-                            System.out.println("Living entity set to selected entity");
-
-                        }
-                    }
-                }
-            }
-        }
-
-        if (push.containsKey(playerUUID) && selectedEntity != null) {
-            // Adjust the acceleration of the entity towards the user
-
-            if (push.getOrDefault(playerUUID, false)) {
-                Vec3d acceleration = new Vec3d(entity.getX() - selectedEntity.getX(),
-                        entity.getY() - 3 - selectedEntity.getY(), entity.getZ() - selectedEntity.getZ());
-                Vec3d force = new Vec3d(acceleration.x * speed_power, acceleration.y * speed_power, acceleration.z * speed_power);
-                entity.addVelocity(force.x, force.y, force.z);
-                push.put(playerUUID, false);
-                System.out.println("pushed");
-            }
-
-            chargesRemainingMap.computeIfAbsent(playerUUID, uuid -> MAX_CHARGES);
-
-            if (cooldownTimers.containsKey(playerUUID)) {
-                if (cooldownTimers.get(playerUUID) <= System.currentTimeMillis()) {
-                    cooldownTimers.remove(playerUUID);
-                    chargesRemainingMap.remove(playerUUID);
-                }
-            }
-
             if (!world.isClient) {
                 if (cooldownTimers.containsKey(playerUUID) && chargesRemainingMap.containsKey(playerUUID)) {
                     if (entity instanceof PlayerEntity && selected) {
@@ -230,6 +203,38 @@ public class ScytheItem extends SwordItem {
                     if (entity instanceof PlayerEntity && selected) {
                         ((PlayerEntity) entity).sendMessage(Text.of("Fully charged"), true);
                     }
+                }
+
+                for (Entity searchEntities : entities) {
+                    if (searchEntities instanceof LivingEntity livingEntity && entity != searchEntities && hasSoulAttach(livingEntity)) {
+                        double distanceSquared = entity.squaredDistanceTo(searchEntities);
+
+                        if (distanceSquared < nearestDistanceSquared) {
+                            nearestDistanceSquared = distanceSquared;
+                            selectedEntity = livingEntity;
+                            //System.out.println("Living entity set to selected entity");
+
+                        }
+                    }
+                }
+            }
+        }
+
+        if (push.containsKey(playerUUID) && selectedEntity != null) {
+            // Adjust the acceleration of the entity towards the user
+
+            if (push.getOrDefault(playerUUID, false) ) {
+
+
+                push.put(playerUUID,false);
+            }
+
+            chargesRemainingMap.computeIfAbsent(playerUUID, uuid -> MAX_CHARGES);
+
+            if (cooldownTimers.containsKey(playerUUID)) {
+                if (cooldownTimers.get(playerUUID) <= System.currentTimeMillis()) {
+                    cooldownTimers.remove(playerUUID);
+                    chargesRemainingMap.remove(playerUUID);
                 }
             }
         }
